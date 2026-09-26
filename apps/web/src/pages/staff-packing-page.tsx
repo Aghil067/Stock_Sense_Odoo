@@ -148,7 +148,7 @@ export function StaffPackingPage() {
             aria-label="Search orders"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search reference, customer or product SKU…"
+            placeholder="Search reference., customer or product SKU…"
           />
         </div>
         {search && (
