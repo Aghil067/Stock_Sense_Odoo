@@ -1,0 +1,20 @@
+{
+  "name": "stocksense",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n API,WEB -c blue,green \"npm run dev -w @stocksense/api\" \"npm run dev -w @stocksense/web\"",
+    "build": "npm run build -w @stocksense/api && npm run build -w @stocksense/web",
+    "typecheck": "npm run typecheck -w @stocksense/api && npm run typecheck -w @stocksense/web",
+    "db:generate": "npm run db:generate -w @stocksense/api",
+    "db:migrate": "npm run db:migrate -w @stocksense/api",
+    "db:seed": "npm run db:seed -w @stocksense/api"
+  },
+  "devDependencies": {
+    "concurrently": "9.2.1"
+  }
+}
+
