@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { randomInt } from 'node:crypto';
 import { Role } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { ApiError } from '../../lib/api-error.js';
@@ -19,7 +20,7 @@ export async function register(input: { name: string; email: string; password: s
 
   const passwordHash = await bcrypt.hash(input.password, 12);
   return prisma.user.create({
-    data: { name: input.name, email: input.email, passwordHash, role: Role.MANAGER },
+    data: { name: input.name, email: input.email, passwordHash, role: Role.STAFF },
     select: publicUserSelect,
   });
 }
@@ -47,7 +48,7 @@ export async function requestPasswordReset(email: string) {
     data: { usedAt: new Date() },
   });
 
-  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  const otp = String(randomInt(100000, 1000000));
   const otpHash = await bcrypt.hash(otp, 10);
   await prisma.passwordResetOtp.create({
     data: { userId: user.id, otpHash, expiresAt: new Date(Date.now() + 10 * 60 * 1000) },

@@ -26,7 +26,7 @@ export function AuthPage() {
         await login(String(form.get('email')), String(form.get('password')));
       } else if (mode === 'register') {
         await api('/auth/register', { method: 'POST', body: JSON.stringify({ name: form.get('name'), email: form.get('email'), password: form.get('password') }) });
-        setMode('login'); setNotice('Account created. Sign in to open your dashboard.');
+        setMode('login'); setNotice('Staff account created. Sign in to open your dashboard. Manager access is assigned by an administrator.');
       } else if (resetStage === 'request') {
         const email = String(form.get('email')); setResetEmail(email);
         const result = await api<{ message: string; developmentOtp?: string }>('/auth/request-reset', { method: 'POST', body: JSON.stringify({ email }) });
@@ -48,7 +48,7 @@ export function AuthPage() {
     <section className="auth-panel">
       <div className="auth-card">
         <div className="auth-icon"><Boxes size={24} /></div>
-        <span className="eyebrow">{mode === 'login' ? 'Welcome back' : mode === 'register' ? 'Create your workspace' : 'Recover access'}</span>
+        <span className="eyebrow">{mode === 'login' ? 'Welcome back' : mode === 'register' ? 'Join your workspace' : 'Recover access'}</span>
         <h2>{mode === 'login' ? 'Sign in to StockSense' : mode === 'register' ? 'Create an account' : resetStage === 'request' ? 'Reset your password' : 'Enter your reset code'}</h2>
         <p>{mode === 'login' ? 'Use the demo account or your team credentials.' : 'All fields are validated before they reach inventory operations.'}</p>
         {notice && <div className="notice success" role="status">{notice}</div>}
