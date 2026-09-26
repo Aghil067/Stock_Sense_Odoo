@@ -66,7 +66,7 @@ export function StaffPickingPage() {
         <div className="search-box">
           <Search size={17} />
           <input
-            aria-label="Search picking orders"
+            aria-label="Search picking orders.."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search reference, customer or product SKU…"
