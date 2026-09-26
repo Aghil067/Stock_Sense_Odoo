@@ -1,63 +1,19 @@
+import { OperationStatus, OperationType } from '@prisma/client';
 import { Router } from 'express';
-import { OperationStatus, OperationType, Prisma } from '@prisma/client';
+import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth.js';
-import { prisma } from '../../lib/prisma.js';
+import { getDashboard } from './dashboard.service.js';
+
+const filtersSchema = z.object({
+  type: z.nativeEnum(OperationType).optional(),
+  status: z.nativeEnum(OperationStatus).optional(),
+  warehouseId: z.string().cuid().optional(),
+  locationId: z.string().cuid().optional(),
+  categoryId: z.string().cuid().optional(),
+});
 
 export const dashboardRouter = Router();
 dashboardRouter.get('/', requireAuth, async (request, response) => {
-  const locationId = typeof request.query.locationId === 'string' ? request.query.locationId : undefined;
-  const categoryId = typeof request.query.categoryId === 'string' ? request.query.categoryId : undefined;
-  const locationFilter = locationId ? { OR: [{ sourceLocationId: locationId }, { destinationLocationId: locationId }] } : {};
-  const productFilter = categoryId ? { lines: { some: { product: { categoryId } } } } : {};
-  const [products, pendingOperations, recentMovements] = await Promise.all([
-    prisma.product.findMany({
-      where: { isActive: true, categoryId },
-      include: {
-        balances: locationId ? { where: { locationId } } : true,
-        reorderRules: locationId ? { where: { locationId } } : true,
-      },
-    }),
-    prisma.stockOperation.groupBy({
-      by: ['type'],
-      where: { status: { in: [OperationStatus.DRAFT, OperationStatus.WAITING, OperationStatus.READY] }, ...locationFilter, ...productFilter },
-      _count: { _all: true },
-    }),
-    prisma.stockLedgerEntry.findMany({
-      where: {
-        ...(locationId ? { OR: [{ sourceLocationId: locationId }, { destinationLocationId: locationId }] } : {}),
-        ...(categoryId ? { product: { categoryId } } : {}),
-      },
-      take: 8, orderBy: { createdAt: 'desc' },
-      include: { product: { include: { unit: true } }, sourceLocation: true, destinationLocation: true, createdBy: { select: { name: true } } },
-    }),
-  ]);
-
-  let totalProductsInStock = 0;
-  let lowStock = 0;
-  let outOfStock = 0;
-  const actions: Array<{ severity: 'HIGH' | 'MEDIUM' | 'OPERATIONS'; message: string; href: string }> = [];
-
-  for (const product of products) {
-    const total = product.balances.reduce((sum, balance) => sum.add(balance.quantity), new Prisma.Decimal(0));
-    if (total.gt(0)) totalProductsInStock += 1;
-    if (total.lte(0)) {
-      outOfStock += 1;
-      actions.push({ severity: 'HIGH', message: `${product.name} is out of stock.`, href: `/products/${product.id}` });
-    } else if (product.reorderRules.some((rule) => (product.balances.find((balance) => balance.locationId === rule.locationId)?.quantity ?? new Prisma.Decimal(0)).lte(rule.minimumQty))) {
-      lowStock += 1;
-      actions.push({ severity: 'MEDIUM', message: `${product.name} is below its reorder level.`, href: `/products/${product.id}` });
-    }
-  }
-
-  const pending = Object.fromEntries(Object.values(OperationType).map((type) => [type, pendingOperations.find((item) => item.type === type)?._count._all ?? 0]));
-  if (pending.RECEIPT) actions.push({ severity: 'OPERATIONS', message: `${pending.RECEIPT} receipt${pending.RECEIPT === 1 ? '' : 's'} waiting for completion.`, href: '/operations/receipts' });
-  if (pending.DELIVERY) actions.push({ severity: 'OPERATIONS', message: `${pending.DELIVERY} delivery order${pending.DELIVERY === 1 ? '' : 's'} pending.`, href: '/operations/deliveries' });
-
-  response.json({
-    data: {
-      kpis: { totalProductsInStock, lowStock, outOfStock, pendingReceipts: pending.RECEIPT, pendingDeliveries: pending.DELIVERY, scheduledTransfers: pending.INTERNAL_TRANSFER },
-      actions: actions.slice(0, 8),
-      recentMovements,
-    },
-  });
+  const filters = filtersSchema.parse(request.query);
+  response.json({ data: await getDashboard(filters) });
 });
