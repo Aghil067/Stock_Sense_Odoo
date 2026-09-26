@@ -106,7 +106,7 @@ export function SettingsPage() {
   if (query.isError || !query.data) {
     return (
       <EmptyState
-        title="Setup unavailable"
+        title="Setup unavailable.."
         message="Warehouse and catalog setup could not be loaded."
         action={
           <button type="button" className="button" onClick={() => void query.refetch()}>
