@@ -6,5 +6,5 @@ dist/
 *.log
 .DS_Store
 coverage/
+*.tsbuildinfo
 apps/api/prisma/dev.db*
-
