@@ -81,6 +81,15 @@ export async function updateProduct(id: string, input: Prisma.ProductUpdateInput
   return getProduct(id);
 }
 
+export async function upsertReorderRule(productId: string, input: { locationId: string; minimumQty: number }) {
+  await prisma.reorderRule.upsert({
+    where: { productId_locationId: { productId, locationId: input.locationId } },
+    create: { productId, locationId: input.locationId, minimumQty: new Prisma.Decimal(input.minimumQty) },
+    update: { minimumQty: new Prisma.Decimal(input.minimumQty) },
+  });
+  return getProduct(productId);
+}
+
 export function getMasterData() {
   return Promise.all([
     prisma.category.findMany({ orderBy: { name: 'asc' } }),
@@ -93,4 +102,3 @@ export const createCategory = (data: { name: string }) => prisma.category.create
 export const createUnit = (data: { name: string; symbol: string }) => prisma.unitOfMeasure.create({ data });
 export const createWarehouse = (data: { name: string; code: string; address?: string }) => prisma.warehouse.create({ data });
 export const createLocation = (data: { name: string; code: string; warehouseId: string }) => prisma.location.create({ data, include: { warehouse: true } });
-

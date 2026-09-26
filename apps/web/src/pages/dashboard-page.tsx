@@ -1,9 +1,11 @@
-import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, Boxes, PackageCheck, Shuffle, Truck } from 'lucide-react';
+import { AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, Boxes, Filter, PackageCheck, Shuffle, Truck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { EmptyState, LoadingState, PageHeader, StatusBadge } from '../components/app-shell';
 import { api, formatDate, formatQuantity } from '../lib/api';
 import type { LedgerEntry } from '../types';
+import type { Category, Unit, Warehouse } from '../types';
 
 type Dashboard = {
   kpis: { totalProductsInStock: number; lowStock: number; outOfStock: number; pendingReceipts: number; pendingDeliveries: number; scheduledTransfers: number };
@@ -21,12 +23,16 @@ const metrics = [
 ] as const;
 
 export function DashboardPage() {
-  const query = useQuery({ queryKey: ['dashboard'], queryFn: () => api<Dashboard>('/dashboard') });
+  const [locationId, setLocationId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const master = useQuery({ queryKey: ['master-data'], queryFn: () => api<{ categories: Category[]; units: Unit[]; warehouses: Warehouse[] }>('/master-data') });
+  const query = useQuery({ queryKey: ['dashboard', locationId, categoryId], queryFn: () => api<Dashboard>(`/dashboard?${new URLSearchParams({ ...(locationId ? { locationId } : {}), ...(categoryId ? { categoryId } : {}) })}`) });
   if (query.isLoading) return <LoadingState />;
   if (query.isError || !query.data) return <EmptyState title="Dashboard unavailable" message="The live inventory summary could not be loaded. Check the API and try again." action={<button className="button" onClick={() => void query.refetch()}>Retry</button>} />;
   const { kpis, actions, recentMovements } = query.data;
   return <>
     <PageHeader eyebrow="Live inventory" title="Control center" description="What needs attention across every warehouse, right now." actions={<Link className="button primary" to="/operations/receipts">New receipt <ArrowRight size={17} /></Link>} />
+    <section className="toolbar panel dashboard-toolbar"><div className="filter-context"><Filter size={16} /><strong>Scope dashboard</strong></div><div className="filter-group"><select aria-label="Filter dashboard by location" value={locationId} onChange={(event) => setLocationId(event.target.value)}><option value="">All warehouses & locations</option>{master.data?.warehouses.flatMap((warehouse) => warehouse.locations.map((location) => <option key={location.id} value={location.id}>{warehouse.name} / {location.name}</option>))}</select><select aria-label="Filter dashboard by category" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">All categories</option>{master.data?.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div></section>
     <section className="metric-grid" aria-label="Inventory KPIs">
       {metrics.map(({ key, label, icon: Icon, tone }) => <article className="metric-card" key={key}><div className={`metric-icon tone-${tone}`}><Icon size={19} /></div><span>{label}</span><strong>{kpis[key]}</strong><small>Live from PostgreSQL</small></article>)}
     </section>
@@ -40,4 +46,3 @@ export function DashboardPage() {
     </div>
   </>;
 }
-

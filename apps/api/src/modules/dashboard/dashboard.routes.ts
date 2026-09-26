@@ -4,18 +4,29 @@ import { requireAuth } from '../../middleware/auth.js';
 import { prisma } from '../../lib/prisma.js';
 
 export const dashboardRouter = Router();
-dashboardRouter.get('/', requireAuth, async (_request, response) => {
+dashboardRouter.get('/', requireAuth, async (request, response) => {
+  const locationId = typeof request.query.locationId === 'string' ? request.query.locationId : undefined;
+  const categoryId = typeof request.query.categoryId === 'string' ? request.query.categoryId : undefined;
+  const locationFilter = locationId ? { OR: [{ sourceLocationId: locationId }, { destinationLocationId: locationId }] } : {};
+  const productFilter = categoryId ? { lines: { some: { product: { categoryId } } } } : {};
   const [products, pendingOperations, recentMovements] = await Promise.all([
     prisma.product.findMany({
-      where: { isActive: true },
-      include: { balances: true, reorderRules: true },
+      where: { isActive: true, categoryId },
+      include: {
+        balances: locationId ? { where: { locationId } } : true,
+        reorderRules: locationId ? { where: { locationId } } : true,
+      },
     }),
     prisma.stockOperation.groupBy({
       by: ['type'],
-      where: { status: { in: [OperationStatus.DRAFT, OperationStatus.WAITING, OperationStatus.READY] } },
+      where: { status: { in: [OperationStatus.DRAFT, OperationStatus.WAITING, OperationStatus.READY] }, ...locationFilter, ...productFilter },
       _count: { _all: true },
     }),
     prisma.stockLedgerEntry.findMany({
+      where: {
+        ...(locationId ? { OR: [{ sourceLocationId: locationId }, { destinationLocationId: locationId }] } : {}),
+        ...(categoryId ? { product: { categoryId } } : {}),
+      },
       take: 8, orderBy: { createdAt: 'desc' },
       include: { product: { include: { unit: true } }, sourceLocation: true, destinationLocation: true, createdBy: { select: { name: true } } },
     }),
@@ -50,4 +61,3 @@ dashboardRouter.get('/', requireAuth, async (_request, response) => {
     },
   });
 });
-

@@ -22,8 +22,12 @@ export const updateProductSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+export const reorderRuleSchema = z.object({
+  locationId: z.string().cuid(),
+  minimumQty: z.coerce.number().nonnegative().max(999999999),
+});
+
 export const categorySchema = z.object({ name: z.string().trim().min(2).max(80) });
 export const unitSchema = z.object({ name: z.string().trim().min(2).max(60), symbol: z.string().trim().min(1).max(12) });
 export const warehouseSchema = z.object({ name: z.string().trim().min(2).max(100), code: z.string().trim().toUpperCase().min(2).max(12), address: z.string().trim().max(240).optional() });
 export const locationSchema = z.object({ name: z.string().trim().min(2).max(100), code: z.string().trim().toUpperCase().min(1).max(20), warehouseId: z.string().cuid() });
-
