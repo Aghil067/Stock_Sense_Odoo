@@ -1,0 +1,217 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+enum Role {
+  MANAGER
+  STAFF
+}
+
+enum OperationType {
+  RECEIPT
+  DELIVERY
+  INTERNAL_TRANSFER
+  ADJUSTMENT
+}
+
+enum OperationStatus {
+  DRAFT
+  WAITING
+  READY
+  DONE
+  CANCELED
+}
+
+model User {
+  id            String             @id @default(cuid())
+  name          String
+  email         String             @unique
+  passwordHash  String
+  role          Role               @default(STAFF)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  operations    StockOperation[]
+  ledgerEntries StockLedgerEntry[]
+  resetOtps     PasswordResetOtp[]
+}
+
+model PasswordResetOtp {
+  id        String    @id @default(cuid())
+  otpHash   String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model UnitOfMeasure {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  symbol    String    @unique
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model Product {
+  id            String               @id @default(cuid())
+  name          String
+  sku           String               @unique
+  description   String?
+  isActive      Boolean              @default(true)
+  categoryId    String
+  unitId        String
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  category      Category             @relation(fields: [categoryId], references: [id])
+  unit          UnitOfMeasure        @relation(fields: [unitId], references: [id])
+  balances      StockBalance[]
+  reorderRules  ReorderRule[]
+  operationLines StockOperationLine[]
+  ledgerEntries StockLedgerEntry[]
+
+  @@index([categoryId])
+  @@index([name])
+}
+
+model Warehouse {
+  id        String     @id @default(cuid())
+  name      String
+  code      String     @unique
+  address   String?
+  createdAt DateTime   @default(now())
+  locations Location[]
+}
+
+model Location {
+  id                    String               @id @default(cuid())
+  name                  String
+  code                  String
+  warehouseId           String
+  createdAt             DateTime             @default(now())
+  warehouse             Warehouse            @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  balances              StockBalance[]
+  reorderRules          ReorderRule[]
+  sourceOperations      StockOperation[]      @relation("SourceLocation")
+  destinationOperations StockOperation[]      @relation("DestinationLocation")
+  sourceLedgerEntries   StockLedgerEntry[]    @relation("LedgerSourceLocation")
+  destinationLedgerEntries StockLedgerEntry[] @relation("LedgerDestinationLocation")
+
+  @@unique([warehouseId, code])
+  @@index([warehouseId])
+}
+
+model StockBalance {
+  id         String   @id @default(cuid())
+  quantity   Decimal  @default(0) @db.Decimal(18, 3)
+  productId  String
+  locationId String
+  updatedAt  DateTime @updatedAt
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@unique([productId, locationId])
+  @@index([locationId])
+}
+
+model ReorderRule {
+  id          String   @id @default(cuid())
+  minimumQty  Decimal  @db.Decimal(18, 3)
+  productId   String
+  locationId  String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, locationId])
+}
+
+model StockOperation {
+  id                    String               @id @default(cuid())
+  reference             String               @unique
+  type                  OperationType
+  status                OperationStatus      @default(DRAFT)
+  partnerName           String?
+  reason                String?
+  scheduledAt           DateTime?
+  completedAt           DateTime?
+  canceledAt            DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  sourceLocationId      String?
+  destinationLocationId String?
+  createdById           String
+  sourceLocation        Location?            @relation("SourceLocation", fields: [sourceLocationId], references: [id], onDelete: Restrict)
+  destinationLocation   Location?            @relation("DestinationLocation", fields: [destinationLocationId], references: [id], onDelete: Restrict)
+  createdBy             User                 @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  lines                 StockOperationLine[]
+  reversalOfId          String?              @unique
+  reversalNotes         String?
+  reversalOf            StockOperation?      @relation("OperationReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversal              StockOperation?      @relation("OperationReversal")
+
+  @@index([type, status])
+  @@index([sourceLocationId])
+  @@index([destinationLocationId])
+  @@index([scheduledAt])
+}
+
+model StockOperationLine {
+  id              String            @id @default(cuid())
+  quantity        Decimal           @db.Decimal(18, 3)
+  countedQuantity Decimal?          @db.Decimal(18, 3)
+  operationId     String
+  productId       String
+  operation       StockOperation    @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  product         Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  ledgerEntry     StockLedgerEntry?
+
+  @@index([operationId])
+  @@index([productId])
+}
+
+model StockLedgerEntry {
+  id                    String             @id @default(cuid())
+  reference             String
+  movementType          OperationType
+  quantity              Decimal            @db.Decimal(18, 3)
+  sourceBefore          Decimal?           @db.Decimal(18, 3)
+  sourceAfter           Decimal?           @db.Decimal(18, 3)
+  destinationBefore     Decimal?           @db.Decimal(18, 3)
+  destinationAfter      Decimal?           @db.Decimal(18, 3)
+  reason                String?
+  createdAt             DateTime           @default(now())
+  operationLineId       String             @unique
+  productId             String
+  sourceLocationId      String?
+  destinationLocationId String?
+  createdById           String
+  operationLine         StockOperationLine @relation(fields: [operationLineId], references: [id], onDelete: Restrict)
+  product               Product            @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sourceLocation        Location?          @relation("LedgerSourceLocation", fields: [sourceLocationId], references: [id], onDelete: Restrict)
+  destinationLocation   Location?          @relation("LedgerDestinationLocation", fields: [destinationLocationId], references: [id], onDelete: Restrict)
+  createdBy             User               @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  reversalOfId          String?            @unique
+  reversalOf            StockLedgerEntry?  @relation("LedgerReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversal              StockLedgerEntry?  @relation("LedgerReversal")
+
+  @@index([productId, createdAt])
+  @@index([movementType, createdAt])
+  @@index([sourceLocationId])
+  @@index([destinationLocationId])
+}
