@@ -22,6 +22,12 @@ export const createOperationSchema = z.object({
   if (value.type === OperationType.RECEIPT && !value.destinationLocationId) {
     context.addIssue({ code: 'custom', path: ['destinationLocationId'], message: 'A destination location is required.' });
   }
+  if ((value.type === OperationType.RECEIPT || value.type === OperationType.DELIVERY) && !value.partnerName) {
+    context.addIssue({ code: 'custom', path: ['partnerName'], message: 'A supplier or customer name is required.' });
+  }
+  if ((value.type === OperationType.INTERNAL_TRANSFER || value.type === OperationType.ADJUSTMENT) && !value.reason) {
+    context.addIssue({ code: 'custom', path: ['reason'], message: 'Give a reason for this stock movement.' });
+  }
   if ((value.type === OperationType.DELIVERY || value.type === OperationType.ADJUSTMENT) && !value.sourceLocationId) {
     context.addIssue({ code: 'custom', path: ['sourceLocationId'], message: 'A source location is required.' });
   }
@@ -31,6 +37,12 @@ export const createOperationSchema = z.object({
     } else if (value.sourceLocationId === value.destinationLocationId) {
       context.addIssue({ code: 'custom', path: ['destinationLocationId'], message: 'Destination must differ from source.' });
     }
+  }
+  if (value.type === OperationType.RECEIPT && value.sourceLocationId) {
+    context.addIssue({ code: 'custom', path: ['sourceLocationId'], message: 'Receipts do not have an internal source location.' });
+  }
+  if ((value.type === OperationType.DELIVERY || value.type === OperationType.ADJUSTMENT) && value.destinationLocationId) {
+    context.addIssue({ code: 'custom', path: ['destinationLocationId'], message: 'This document does not have an internal destination location.' });
   }
   if (value.type === OperationType.ADJUSTMENT && value.lines.some((line) => line.countedQuantity === undefined)) {
     context.addIssue({ code: 'custom', path: ['lines'], message: 'Physical count is required for adjustments.' });

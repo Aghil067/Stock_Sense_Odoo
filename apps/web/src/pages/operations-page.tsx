@@ -48,6 +48,10 @@ export function OperationsPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
+    const productIds = lines.map((line) => line.productId);
+    if (new Set(productIds).size !== productIds.length) { setError('Each product can appear only once in a document.'); return; }
+    if (config.type === 'INTERNAL_TRANSFER' && form.get('sourceLocationId') === form.get('destinationLocationId')) { setError('Choose different source and destination locations.'); return; }
+    setError('');
     create.mutate({
       type: config.type,
       partnerName: form.get('partnerName') || undefined,
@@ -73,17 +77,28 @@ export function OperationsPage() {
       {config.type !== 'ADJUSTMENT' && <label>Scheduled date<input name="scheduledAt" type="datetime-local" /></label>}
       {(config.type === 'INTERNAL_TRANSFER' || config.type === 'ADJUSTMENT') && <label>Reason<input name="reason" required placeholder={config.type === 'ADJUSTMENT' ? 'Cycle count / damage' : 'Production allocation'} /></label>}
     </div><div className="line-editor"><div className="line-editor-heading"><strong>Product lines</strong><button type="button" className="text-link button-link" onClick={() => setLines((current) => [...current, { key: Date.now(), productId: '', quantity: '1', countedQuantity: '' }])}><Plus size={14} /> Add line</button></div>{lines.map((line, index) => <div className="operation-line" key={line.key}><span>{index + 1}</span><select aria-label={`Product line ${index + 1}`} value={line.productId} onChange={(event) => updateLine(line.key, 'productId', event.target.value)} required><option value="">Select product</option>{products.data?.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}</select><input aria-label={config.type === 'ADJUSTMENT' ? 'Physical count' : 'Quantity'} type="number" min={config.type === 'ADJUSTMENT' ? '0' : '0.001'} step="0.001" value={config.type === 'ADJUSTMENT' ? line.countedQuantity : line.quantity} onChange={(event) => updateLine(line.key, config.type === 'ADJUSTMENT' ? 'countedQuantity' : 'quantity', event.target.value)} placeholder={config.type === 'ADJUSTMENT' ? 'Physical count' : 'Quantity'} required /><button type="button" className="icon-button" aria-label="Remove line" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))}><X size={15} /></button></div>)}</div><div className="modal-actions"><button type="button" className="button" onClick={() => setOpen(false)}>Cancel</button><button className="button primary" disabled={create.isPending}>{create.isPending ? 'Saving…' : 'Create draft'}</button></div></form></section></div>}
-    {previewId && <div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true"><div className="modal-header"><div><span className="eyebrow">What-if preview</span><h2>Confirm stock movement</h2></div><button className="icon-button" aria-label="Close" onClick={() => setPreviewId(null)}><X size={18} /></button></div>{preview.isLoading ? <LoadingState /> : <div className="preview-list">{preview.data?.map((line) => <article className="preview-card" key={line.product.id}><strong>{line.product.name}</strong><div><span><small>Source before</small>{formatQuantity(line.sourceBefore ?? 0, line.product.unit.symbol)}</span><ArrowRight size={18} /><span><small>Source after</small>{formatQuantity(line.sourceAfter ?? 0, line.product.unit.symbol)}</span></div><div><span><small>Destination before</small>{formatQuantity(line.destinationBefore ?? 0, line.product.unit.symbol)}</span><ArrowRight size={18} /><span><small>Destination after</small>{formatQuantity(line.destinationAfter ?? 0, line.product.unit.symbol)}</span></div></article>)}</div>}<p className="preview-note">The database is unchanged until you confirm. For internal transfers, total company stock remains constant.</p><div className="modal-actions"><button className="button" onClick={() => setPreviewId(null)}>Back</button><button className="button primary" onClick={() => action.mutate({ id: previewId, name: 'validate' })} disabled={action.isPending}><Check size={16} /> Confirm and validate</button></div></section></div>}
+    {previewId && <div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+      <div className="modal-header"><div><span className="eyebrow">What-if preview</span><h2 id="preview-title">Confirm stock movement</h2></div><button className="icon-button" aria-label="Close" onClick={() => setPreviewId(null)}><X size={18} /></button></div>
+      {preview.isLoading ? <LoadingState /> : preview.isError ? <div className="notice error" role="alert">Could not calculate this stock preview. Please try again.</div> : <div className="preview-list">{preview.data?.map((line) => <article className="preview-card" key={line.product.id}>
+        <strong>{line.product.name}</strong>
+        {line.sourceBefore != null && <div><span><small>{config.type === 'ADJUSTMENT' ? 'Recorded stock' : 'Source before'}</small>{formatQuantity(line.sourceBefore, line.product.unit.symbol)}</span><ArrowRight size={18} /><span><small>{config.type === 'ADJUSTMENT' ? 'Physical count' : 'Source after'}</small>{formatQuantity(line.sourceAfter ?? 0, line.product.unit.symbol)}</span></div>}
+        {line.destinationBefore != null && <div><span><small>Destination before</small>{formatQuantity(line.destinationBefore, line.product.unit.symbol)}</span><ArrowRight size={18} /><span><small>Destination after</small>{formatQuantity(line.destinationAfter ?? 0, line.product.unit.symbol)}</span></div>}
+      </article>)}</div>}
+      <p className="preview-note">The database is unchanged until you confirm. Internal transfers change locations but not the company-wide total.</p>
+      <div className="modal-actions"><button className="button" onClick={() => setPreviewId(null)}>Back</button><button className="button primary" onClick={() => action.mutate({ id: previewId, name: 'validate' })} disabled={action.isPending || !preview.data}><Check size={16} /> Confirm and validate</button></div>
+    </section></div>}
   </>;
 }
 
 function OperationActions({ operation, busy, onAction, onPreview }: { operation: Operation; busy: boolean; onAction: (action: string) => void; onPreview: () => void }) {
   if (operation.status === 'DONE' || operation.status === 'CANCELED') return <span className="table-muted">Finalized</span>;
+  let primary;
   if (operation.type === 'DELIVERY') {
-    if (operation.status === 'DRAFT') return <button className="button compact" disabled={busy} onClick={() => onAction('pick')}>Pick</button>;
-    if (operation.status === 'WAITING') return <button className="button compact" disabled={busy} onClick={() => onAction('pack')}>Pack</button>;
-    return <button className="button compact primary" disabled={busy} onClick={() => onAction('validate')}>Validate</button>;
+    if (operation.status === 'DRAFT') primary = <button className="button compact" disabled={busy} onClick={() => onAction('pick')}>Pick</button>;
+    else if (operation.status === 'WAITING') primary = <button className="button compact" disabled={busy} onClick={() => onAction('pack')}>Pack</button>;
+    else primary = <button className="button compact primary" disabled={busy} onClick={onPreview}><Eye size={14} /> Preview</button>;
+  } else {
+    primary = <button className="button compact primary" disabled={busy} onClick={onPreview}><Eye size={14} /> Preview</button>;
   }
-  if (operation.type === 'INTERNAL_TRANSFER') return <button className="button compact" disabled={busy} onClick={onPreview}><Eye size={14} /> Preview</button>;
-  return <button className="button compact primary" disabled={busy} onClick={() => onAction('validate')}>Validate</button>;
+  return <div className="operation-actions">{primary}<button className="button compact danger" disabled={busy} onClick={() => onAction('cancel')}>Cancel</button></div>;
 }
