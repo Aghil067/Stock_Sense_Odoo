@@ -1,5 +1,6 @@
 import { OperationType, Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+import { ApiError } from '../../lib/api-error.js';
 import { createOperation, validateOperation } from '../operations/operation.service.js';
 
 const productInclude = {
@@ -26,12 +27,15 @@ export async function listProducts(filters: { search?: string; categoryId?: stri
         { sku: { contains: filters.search, mode: 'insensitive' } },
       ] } : {}),
       categoryId: filters.categoryId,
-      ...(filters.locationId ? { balances: { some: { locationId: filters.locationId } } } : {}),
     },
     include: productInclude,
     orderBy: { name: 'asc' },
   });
-  const data = products.map(serializeProduct);
+  const data = products.map((product) => serializeProduct(filters.locationId ? {
+    ...product,
+    balances: product.balances.filter((balance) => balance.locationId === filters.locationId),
+    reorderRules: product.reorderRules.filter((rule) => rule.locationId === filters.locationId),
+  } : product));
   return filters.stockStatus ? data.filter((product) => product.stockStatus === filters.stockStatus) : data;
 }
 
@@ -53,6 +57,10 @@ export async function createProduct(input: {
   name: string; sku: string; description?: string; categoryId: string; unitId: string;
   initialStock: number; initialLocationId?: string; reorderLevel?: number;
 }, userId: string) {
+  if (input.initialLocationId) {
+    const location = await prisma.location.findUnique({ where: { id: input.initialLocationId }, select: { id: true } });
+    if (!location) throw new ApiError(422, 'INVALID_LOCATION', 'Choose an existing location for opening stock or reorder level.');
+  }
   const product = await prisma.product.create({
     data: {
       name: input.name, sku: input.sku, description: input.description,

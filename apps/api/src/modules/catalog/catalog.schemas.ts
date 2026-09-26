@@ -9,8 +9,8 @@ export const createProductSchema = z.object({
   initialStock: z.coerce.number().nonnegative().max(999999999).default(0),
   initialLocationId: z.string().cuid().optional(),
   reorderLevel: z.coerce.number().nonnegative().max(999999999).optional(),
-}).refine((value) => value.initialStock === 0 || Boolean(value.initialLocationId), {
-  path: ['initialLocationId'], message: 'Choose a location for the opening stock.',
+}).refine((value) => (value.initialStock === 0 && value.reorderLevel === undefined) || Boolean(value.initialLocationId), {
+  path: ['initialLocationId'], message: 'Choose a location for opening stock or a reorder rule.',
 });
 
 export const updateProductSchema = z.object({
