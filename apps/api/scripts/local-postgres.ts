@@ -93,6 +93,8 @@ async function stop() {
 }
 
 const command = process.argv[2] ?? 'start';
-if (command === 'start') await start();
-else if (command === 'stop') await stop();
+if (command === 'start') {
+  await start();
+  setInterval(() => {}, 60000);
+} else if (command === 'stop') await stop();
 else throw new Error(`Unknown command: ${command}`);

@@ -1,9 +1,9 @@
-import { ArrowRight, Check, Eye, Filter, PackagePlus, Plus, Search, X } from 'lucide-react';
+import { ArrowRight, Check, Eye, Filter, PackagePlus, Plus, RotateCcw, Search, X } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState, type FormEvent } from 'react';
-import { useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { EmptyState, LoadingState, PageHeader, StatusBadge } from '../components/app-shell';
-import { api, ApiClientError, formatDate, formatQuantity } from '../lib/api';
+import { api, apiPage, ApiClientError, formatDate, formatQuantity } from '../lib/api';
 import type { Category, Operation, OperationStatus, OperationType, Product, Unit, Warehouse } from '../types';
 
 type MasterData = { categories: Category[]; units: Unit[]; warehouses: Warehouse[] };
@@ -18,31 +18,36 @@ const configs: Record<string, { type: OperationType; eyebrow: string; title: str
 
 export function OperationsPage() {
   const { kind = 'receipts' } = useParams();
+  const [searchParams] = useSearchParams();
   const config = configs[kind] ?? configs.receipts;
   const queryClient = useQueryClient();
   const [status, setStatus] = useState('');
-  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState(searchParams.get('search') ?? '');
+  useEffect(() => { setPage(1); }, [kind, search, status]);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([{ key: 1, productId: '', quantity: '1', countedQuantity: '' }]);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const hasActiveFilters = Boolean(status || search);
+  function resetFilters() { setStatus(''); setSearch(''); }
   const products = useQuery({ queryKey: ['products', 'operation-picker'], queryFn: () => api<Product[]>('/products') });
   const master = useQuery({ queryKey: ['master-data'], queryFn: () => api<MasterData>('/master-data') });
   const operations = useQuery({
-    queryKey: ['operations', config.type, status, search],
-    queryFn: () => api<Operation[]>(`/operations?${new URLSearchParams({ type: config.type, ...(status ? { status } : {}), ...(search ? { search } : {}) })}`),
+    queryKey: ['operations', config.type, status, search, page],
+    queryFn: () => apiPage<{ data: Operation[]; pagination: { page: number; totalPages: number; totalItems: number } }>(`/operations?${new URLSearchParams({ page: String(page), type: config.type, ...(status ? { status } : {}), ...(search ? { search } : {}) })}`),
   });
   const preview = useQuery({ queryKey: ['operation-preview', previewId], queryFn: () => api<PreviewLine[]>(`/operations/${previewId}/preview`), enabled: Boolean(previewId) });
 
   const action = useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => api(`/operations/${id}/${name}`, { method: 'POST' }),
     onSuccess: async () => { setPreviewId(null); await Promise.all([queryClient.invalidateQueries({ queryKey: ['operations'] }), queryClient.invalidateQueries({ queryKey: ['dashboard'] }), queryClient.invalidateQueries({ queryKey: ['products'] }), queryClient.invalidateQueries({ queryKey: ['ledger'] })]); },
-    onError: (cause) => setError(cause instanceof ApiClientError ? cause.message : 'The operation could not be updated.'),
+    onError: (cause) => { let msg = cause instanceof ApiClientError ? cause.message : 'The operation could not be updated.'; if (cause instanceof ApiClientError && cause.details && typeof cause.details === 'object' && 'fieldErrors' in cause.details) { const fieldMsgs = Object.values((cause.details as { fieldErrors: Record<string, string[]> }).fieldErrors).flat(); if (fieldMsgs.length > 0) msg = fieldMsgs.join(' '); } setError(msg); },
   });
   const create = useMutation({
     mutationFn: (payload: unknown) => api('/operations', { method: 'POST', body: JSON.stringify(payload) }),
     onSuccess: async () => { setOpen(false); setLines([{ key: Date.now(), productId: '', quantity: '1', countedQuantity: '' }]); setError(''); await queryClient.invalidateQueries({ queryKey: ['operations'] }); },
-    onError: (cause) => setError(cause instanceof ApiClientError ? cause.message : 'The draft could not be created.'),
+    onError: (cause) => { let msg = cause instanceof ApiClientError ? cause.message : 'The draft could not be created.'; if (cause instanceof ApiClientError && cause.details && typeof cause.details === 'object' && 'fieldErrors' in cause.details) { const fieldMsgs = Object.values((cause.details as { fieldErrors: Record<string, string[]> }).fieldErrors).flat(); if (fieldMsgs.length > 0) msg = fieldMsgs.join(' '); } setError(msg); },
   });
   const locations = useMemo(() => master.data?.warehouses.flatMap((warehouse) => warehouse.locations.map((location) => ({ ...location, warehouseName: warehouse.name }))) ?? [], [master.data]);
 
@@ -67,8 +72,9 @@ export function OperationsPage() {
   return <>
     <PageHeader eyebrow={config.eyebrow} title={config.title} description={config.description} actions={<button className="button primary" onClick={() => setOpen(true)}><Plus size={17} />{config.action}</button>} />
     {error && <div className="notice error dismissible">{error}<button aria-label="Dismiss" onClick={() => setError('')}><X size={15} /></button></div>}
-    <section className="toolbar panel"><div className="search-box"><Search size={17} /><input aria-label="Search operations" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search reference, partner or SKU…" /></div><div className="filter-group"><Filter size={16} /><select aria-label="Filter status" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{['DRAFT','WAITING','READY','DONE','CANCELED'].map((item) => <option key={item}>{item}</option>)}</select></div></section>
-    <section className="panel table-panel">{operations.isLoading ? <LoadingState /> : operations.data?.length ? <div className="table-scroll"><table><thead><tr><th>Reference</th><th>Route / partner</th><th>Products</th><th>Created</th><th>Status</th><th aria-label="Actions" /></tr></thead><tbody>{operations.data.map((operation) => <tr key={operation.id}><td><strong>{operation.reference}</strong><small className="table-sub">{operation.createdBy.name}</small></td><td><strong>{operation.partnerName || `${operation.sourceLocation?.name ?? 'External'} → ${operation.destinationLocation?.name ?? 'External'}`}</strong><small className="table-sub">{operation.reason || operation.scheduledAt ? (operation.reason || `Scheduled ${formatDate(operation.scheduledAt!)}`) : '—'}</small></td><td>{operation.lines.length} line{operation.lines.length === 1 ? '' : 's'}<small className="table-sub">{operation.lines.map((line) => line.product.name).join(', ')}</small></td><td>{formatDate(operation.createdAt)}</td><td><StatusBadge value={operation.status} /></td><td><OperationActions operation={operation} busy={action.isPending} onAction={(name) => action.mutate({ id: operation.id, name })} onPreview={() => setPreviewId(operation.id)} /></td></tr>)}</tbody></table></div> : <EmptyState title={`No ${config.title.toLowerCase()} yet`} message={`Create a draft to begin the ${config.title.toLowerCase()} workflow.`} action={<button className="button" onClick={() => setOpen(true)}>{config.action}</button>} />}</section>
+    <section className="toolbar panel"><div className="search-box"><Search size={17} /><input aria-label="Search operations" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search reference, partner or SKU…" /></div><div className="filter-group"><Filter size={16} /><select aria-label="Filter status" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{['DRAFT','WAITING','READY','DONE','CANCELED'].map((item) => <option key={item}>{item}</option>)}</select>{hasActiveFilters && <button type="button" className="button" onClick={resetFilters}><RotateCcw size={15} /> Reset filters</button>}</div></section>
+    <section className="panel table-panel">{operations.isLoading ? <LoadingState /> : operations.isError ? <EmptyState title="Operations unavailable" message={operations.error.message} action={<button className="button" onClick={() => void operations.refetch()}>Retry</button>} /> : operations.data?.data.length ? <div className="table-scroll"><table><thead><tr><th>Reference</th><th>Route / partner</th><th>Products</th><th>Created</th><th>Status</th><th aria-label="Actions" /></tr></thead><tbody>{operations.data.data.map((operation) => <tr key={operation.id}><td><strong>{operation.reference}</strong><small className="table-sub">{operation.createdBy.name}</small></td><td><strong>{operation.partnerName || `${operation.sourceLocation?.name ?? 'External'} → ${operation.destinationLocation?.name ?? 'External'}`}</strong><small className="table-sub">{operation.reason || operation.scheduledAt ? (operation.reason || `Scheduled ${formatDate(operation.scheduledAt!)}`) : '—'}</small></td><td>{operation.lines.length} line{operation.lines.length === 1 ? '' : 's'}<small className="table-sub">{operation.lines.map((line) => line.product.name).join(', ')}</small></td><td>{formatDate(operation.createdAt)}</td><td><StatusBadge value={operation.status} />{(operation.reversalOfId || operation.reversal) && <span className="audit-badge">{operation.reversalOfId ? 'Reversal' : 'Reversed'}</span>}</td><td><OperationActions operation={operation} busy={action.isPending} onAction={(name) => action.mutate({ id: operation.id, name })} onPreview={() => setPreviewId(operation.id)} /></td></tr>)}</tbody></table></div> : <EmptyState title={`No ${config.title.toLowerCase()} yet`} message={`Create a draft to begin the ${config.title.toLowerCase()} workflow.`} action={<button className="button" onClick={() => setOpen(true)}>{config.action}</button>} />}</section>
+    {operations.data && <div className="panel-footer"><span className="table-sub">{operations.data.pagination.totalItems} matching operations · page {page} of {Math.max(1, operations.data.pagination.totalPages)}</span><div className="filter-group"><button className="button compact" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Previous</button><button className="button compact" disabled={page >= operations.data.pagination.totalPages} onClick={() => setPage(value => value + 1)}>Next</button></div></div>}
     {open && <div className="modal-backdrop"><section className="modal wide" role="dialog" aria-modal="true" aria-labelledby="operation-dialog-title"><div className="modal-header"><div><span className="eyebrow">{config.eyebrow}</span><h2 id="operation-dialog-title">{config.action}</h2></div><button className="icon-button" aria-label="Close" onClick={() => setOpen(false)}><X size={18} /></button></div>{error && <div className="notice error">{error}</div>}<form className="form-stack" onSubmit={submit}><div className="form-grid">
       {config.type === 'RECEIPT' && <label>Supplier<input name="partnerName" required placeholder="Supplier name" /></label>}
       {config.type === 'DELIVERY' && <label>Customer<input name="partnerName" required placeholder="Customer name" /></label>}
@@ -79,13 +85,43 @@ export function OperationsPage() {
     </div><div className="line-editor"><div className="line-editor-heading"><strong>Product lines</strong><button type="button" className="text-link button-link" onClick={() => setLines((current) => [...current, { key: Date.now(), productId: '', quantity: '1', countedQuantity: '' }])}><Plus size={14} /> Add line</button></div>{lines.map((line, index) => <div className="operation-line" key={line.key}><span>{index + 1}</span><select aria-label={`Product line ${index + 1}`} value={line.productId} onChange={(event) => updateLine(line.key, 'productId', event.target.value)} required><option value="">Select product</option>{products.data?.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}</select><input aria-label={config.type === 'ADJUSTMENT' ? 'Physical count' : 'Quantity'} type="number" min={config.type === 'ADJUSTMENT' ? '0' : '0.001'} step="0.001" value={config.type === 'ADJUSTMENT' ? line.countedQuantity : line.quantity} onChange={(event) => updateLine(line.key, config.type === 'ADJUSTMENT' ? 'countedQuantity' : 'quantity', event.target.value)} placeholder={config.type === 'ADJUSTMENT' ? 'Physical count' : 'Quantity'} required /><button type="button" className="icon-button" aria-label="Remove line" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))}><X size={15} /></button></div>)}</div><div className="modal-actions"><button type="button" className="button" onClick={() => setOpen(false)}>Cancel</button><button className="button primary" disabled={create.isPending}>{create.isPending ? 'Saving…' : 'Create draft'}</button></div></form></section></div>}
     {previewId && <div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="preview-title">
       <div className="modal-header"><div><span className="eyebrow">What-if preview</span><h2 id="preview-title">Confirm stock movement</h2></div><button className="icon-button" aria-label="Close" onClick={() => setPreviewId(null)}><X size={18} /></button></div>
-      {preview.isLoading ? <LoadingState /> : preview.isError ? <div className="notice error" role="alert">Could not calculate this stock preview. Please try again.</div> : <div className="preview-list">{preview.data?.map((line) => <article className="preview-card" key={line.product.id}>
-        <strong>{line.product.name}</strong>
-        {line.sourceBefore != null && <div><span><small>{config.type === 'ADJUSTMENT' ? 'Recorded stock' : 'Source before'}</small>{formatQuantity(line.sourceBefore, line.product.unit.symbol)}</span><ArrowRight size={18} /><span><small>{config.type === 'ADJUSTMENT' ? 'Physical count' : 'Source after'}</small>{formatQuantity(line.sourceAfter ?? 0, line.product.unit.symbol)}</span></div>}
-        {line.destinationBefore != null && <div><span><small>Destination before</small>{formatQuantity(line.destinationBefore, line.product.unit.symbol)}</span><ArrowRight size={18} /><span><small>Destination after</small>{formatQuantity(line.destinationAfter ?? 0, line.product.unit.symbol)}</span></div>}
-      </article>)}</div>}
+      {preview.isLoading ? <LoadingState /> : preview.isError ? <div className="notice error" role="alert">Could not calculate this stock preview. Please try again.</div> : <div className="preview-list">{preview.data?.map((line) => {
+        const isInsufficient = line.sourceBefore != null && Number(line.sourceAfter) < 0;
+        return <article className={`preview-card ${isInsufficient ? 'insufficient-stock' : ''}`} key={line.product.id}>
+          <div className="preview-card-header">
+            <strong>{line.product.name}</strong>
+            {isInsufficient && <span className="status-badge status-canceled">INVALID (Insufficient stock)</span>}
+          </div>
+          {line.sourceBefore != null && (
+            config.type === 'ADJUSTMENT' ? (
+              <div>
+                <span><small>Recorded stock</small>{formatQuantity(line.sourceBefore, line.product.unit.symbol)}</span>
+                <ArrowRight size={18} />
+                <span><small>Physical count</small>{formatQuantity(line.sourceAfter ?? 0, line.product.unit.symbol)}</span>
+                <span>
+                  <small>Difference</small>
+                  <strong>
+                    {Number(line.sourceAfter ?? 0) - Number(line.sourceBefore ?? 0) > 0 ? '+' : ''}
+                    {formatQuantity(Number(line.sourceAfter ?? 0) - Number(line.sourceBefore ?? 0), line.product.unit.symbol)}
+                  </strong>
+                </span>
+              </div>
+            ) : (
+              <div>
+                <span><small>Source before</small>{formatQuantity(line.sourceBefore, line.product.unit.symbol)}</span>
+                <ArrowRight size={18} />
+                <span>
+                  <small>Source after</small>
+                  {isInsufficient ? <strong style={{ color: 'var(--color-red-600, #dc2626)' }}>INVALID ({formatQuantity(line.sourceAfter ?? 0, line.product.unit.symbol)})</strong> : formatQuantity(line.sourceAfter ?? 0, line.product.unit.symbol)}
+                </span>
+              </div>
+            )
+          )}
+          {line.destinationBefore != null && <div><span><small>Destination before</small>{formatQuantity(line.destinationBefore, line.product.unit.symbol)}</span><ArrowRight size={18} /><span><small>Destination after</small>{formatQuantity(line.destinationAfter ?? 0, line.product.unit.symbol)}</span></div>}
+        </article>;
+      })}</div>}
       <p className="preview-note">The database is unchanged until you confirm. Internal transfers change locations but not the company-wide total.</p>
-      <div className="modal-actions"><button className="button" onClick={() => setPreviewId(null)}>Back</button><button className="button primary" onClick={() => action.mutate({ id: previewId, name: 'validate' })} disabled={action.isPending || !preview.data}><Check size={16} /> Confirm and validate</button></div>
+      <div className="modal-actions"><button className="button" onClick={() => setPreviewId(null)}>Back</button><button className="button primary" onClick={() => action.mutate({ id: previewId, name: 'validate' })} disabled={action.isPending || !preview.data || Boolean(preview.data?.some((line) => line.sourceBefore != null && Number(line.sourceAfter) < 0))}><Check size={16} /> Confirm and validate</button></div>
     </section></div>}
   </>;
 }

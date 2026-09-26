@@ -159,6 +159,10 @@ model StockOperation {
   destinationLocation   Location?            @relation("DestinationLocation", fields: [destinationLocationId], references: [id], onDelete: Restrict)
   createdBy             User                 @relation(fields: [createdById], references: [id], onDelete: Restrict)
   lines                 StockOperationLine[]
+  reversalOfId          String?              @unique
+  reversalNotes         String?
+  reversalOf            StockOperation?      @relation("OperationReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversal              StockOperation?      @relation("OperationReversal")
 
   @@index([type, status])
   @@index([sourceLocationId])
@@ -201,6 +205,10 @@ model StockLedgerEntry {
   sourceLocation        Location?          @relation("LedgerSourceLocation", fields: [sourceLocationId], references: [id], onDelete: Restrict)
   destinationLocation   Location?          @relation("LedgerDestinationLocation", fields: [destinationLocationId], references: [id], onDelete: Restrict)
   createdBy             User               @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  reversalOfId          String?            @unique
+  reversalOf            StockLedgerEntry?  @relation("LedgerReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversal              StockLedgerEntry?  @relation("LedgerReversal")
 
   @@index([productId, createdAt])
   @@index([movementType, createdAt])

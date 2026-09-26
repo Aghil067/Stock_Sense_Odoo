@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from './lib/api';
 import type { User } from './types';
+import { useQueryClient } from '@tanstack/react-query';
 
 type AuthContextValue = {
   user: User | null; isLoading: boolean;
@@ -12,6 +13,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -23,10 +25,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthContextValue>(() => ({
     user, isLoading,
-    login: async (email, password) => setUser(await api<User>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })),
-    logout: async () => { await api('/auth/logout', { method: 'POST' }); setUser(null); },
+    login: async (email, password) => { const nextUser = await api<User>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); queryClient.clear(); setUser(nextUser); },
+    logout: async () => { await api('/auth/logout', { method: 'POST' }); queryClient.clear(); setUser(null); },
     refresh,
-  }), [user, isLoading]);
+  }), [user, isLoading, queryClient]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

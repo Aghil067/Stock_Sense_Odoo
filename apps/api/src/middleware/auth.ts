@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import type { Role } from '@prisma/client';
 import { env } from '../config/env.js';
 import { ApiError } from '../lib/api-error.js';
+import { prisma } from '../lib/prisma.js';
 
 type AuthToken = {
   sub: string;
@@ -19,8 +20,13 @@ export function requireAuth(request: Request, _response: Response, next: NextFun
 
   try {
     const payload = jwt.verify(token, env.JWT_SECRET) as AuthToken;
-    request.user = { id: payload.sub, role: payload.role };
-    next();
+    if (typeof payload.sub !== 'string') throw new Error('Invalid session subject');
+    // Resolve current privileges, rather than keeping a removed manager role for 8 hours.
+    void prisma.user.findUnique({ where: { id: payload.sub }, select: { id: true, role: true } }).then(user => {
+      if (!user) { next(new ApiError(401, 'SESSION_EXPIRED', 'Your account is no longer available.')); return; }
+      request.user = user;
+      next();
+    }).catch(next);
   } catch {
     next(new ApiError(401, 'SESSION_EXPIRED', 'Your session has expired. Please sign in again.'));
   }

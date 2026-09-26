@@ -10,12 +10,24 @@ import { masterDataRouter, productRouter } from './modules/catalog/catalog.route
 import { ledgerRouter } from './modules/ledger/ledger.routes.js';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes.js';
 import { replenishmentRouter } from './modules/replenishment/replenishment.routes.js';
+import { staffRouter } from './modules/staff/staff.routes.js';
+import { aiRouter } from './modules/ai/ai.routes.js';
 
 export const app = express();
 
 app.disable('x-powered-by');
 app.use(helmet());
-app.use(cors({ origin: env.WEB_ORIGIN, credentials: true }));
+const allowedOrigins = [env.WEB_ORIGIN, 'http://localhost:5173', 'http://localhost:5175', 'http://127.0.0.1:5173', 'http://127.0.0.1:5175'];
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || /^http:\/\/(localhost|127\.0\.0\.1):517[0-9]$/.test(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '200kb' }));
 app.use(cookieParser());
 
@@ -27,6 +39,8 @@ app.use('/api/master-data', masterDataRouter);
 app.use('/api/ledger', ledgerRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/replenishment', replenishmentRouter);
+app.use('/api/staff', staffRouter);
+app.use('/api/ai', aiRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

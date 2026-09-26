@@ -7,6 +7,8 @@ const environmentSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   WEB_ORIGIN: z.string().url().default('http://localhost:5173'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  AI_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().optional(),
 });
 
 export const env = environmentSchema.parse(process.env);

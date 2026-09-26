@@ -10,3 +10,4 @@ coverage/
 .local/
 tmp/
 apps/api/prisma/dev.db*
+cookies.txt

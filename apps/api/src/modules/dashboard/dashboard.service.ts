@@ -1,5 +1,6 @@
 import { OperationStatus, OperationType, Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+import { stockHealth } from '../../lib/stock-health.js';
 
 type Filters = {
   type?: OperationType;
@@ -11,7 +12,7 @@ type Filters = {
 
 const pendingStatuses = [OperationStatus.DRAFT, OperationStatus.WAITING, OperationStatus.READY];
 
-export async function getDashboard(filters: Filters) {
+export async function getDashboard(filters: Filters, db: Prisma.TransactionClient = prisma) {
   const stockScope: Prisma.StockBalanceWhereInput | undefined = filters.locationId
     ? { locationId: filters.locationId }
     : filters.warehouseId ? { location: { warehouseId: filters.warehouseId } } : undefined;
@@ -45,18 +46,18 @@ export async function getDashboard(filters: Filters) {
   };
 
   const [products, pendingOperations, scheduledTransfers, matchingDocuments, recentMovements] = await Promise.all([
-    prisma.product.findMany({
+    db.product.findMany({
       where: { isActive: true, categoryId: filters.categoryId },
       include: {
         balances: stockScope ? { where: stockScope } : true,
         reorderRules: ruleScope ? { where: ruleScope } : true,
       },
     }),
-    prisma.stockOperation.groupBy({ by: ['type'], where: pendingWhere, _count: { _all: true } }),
-    filters.type && filters.type !== OperationType.INTERNAL_TRANSFER ? Promise.resolve(0) : prisma.stockOperation.count({
-      where: { ...pendingWhere, type: OperationType.INTERNAL_TRANSFER, scheduledAt: { not: null } },
+    db.stockOperation.groupBy({ by: ['type'], where: pendingWhere, _count: { _all: true } }),
+    filters.type && filters.type !== OperationType.INTERNAL_TRANSFER ? Promise.resolve(0) : db.stockOperation.count({
+      where: { ...pendingWhere, type: OperationType.INTERNAL_TRANSFER },
     }),
-    prisma.stockOperation.findMany({
+    db.stockOperation.findMany({
       where: operationWhere,
       take: 8,
       orderBy: { createdAt: 'desc' },
@@ -65,7 +66,7 @@ export async function getDashboard(filters: Filters) {
         partnerName: true, scheduledAt: true, _count: { select: { lines: true } },
       },
     }),
-    filters.status && filters.status !== OperationStatus.DONE ? Promise.resolve([]) : prisma.stockLedgerEntry.findMany({
+    filters.status && filters.status !== OperationStatus.DONE ? Promise.resolve([]) : db.stockLedgerEntry.findMany({
       where: ledgerWhere,
       take: 8,
       orderBy: { createdAt: 'desc' },
@@ -80,11 +81,10 @@ export async function getDashboard(filters: Filters) {
   for (const product of products) {
     const total = product.balances.reduce((sum, balance) => sum.add(balance.quantity), new Prisma.Decimal(0));
     if (total.gt(0)) totalProductsInStock += 1;
-    if (total.lte(0)) {
+    if (stockHealth(product) === 'OUT_OF_STOCK') {
       outOfStock += 1;
       actions.push({ severity: 'HIGH', message: `${product.name} is out of stock.`, href: `/products/${product.id}` });
-    } else if (product.reorderRules.some((rule) =>
-      (product.balances.find((balance) => balance.locationId === rule.locationId)?.quantity ?? new Prisma.Decimal(0)).lte(rule.minimumQty))) {
+    } else if (stockHealth(product) === 'LOW_STOCK') {
       lowStock += 1;
       actions.push({ severity: 'MEDIUM', message: `${product.name} is below its reorder level.`, href: `/products/${product.id}` });
     }
@@ -93,6 +93,8 @@ export async function getDashboard(filters: Filters) {
     [type, pendingOperations.find((item) => item.type === type)?._count._all ?? 0]));
   if (pending.RECEIPT) actions.push({ severity: 'OPERATIONS', message: `${pending.RECEIPT} receipt(s) waiting for completion.`, href: '/operations/receipts' });
   if (pending.DELIVERY) actions.push({ severity: 'OPERATIONS', message: `${pending.DELIVERY} delivery order(s) pending.`, href: '/operations/deliveries' });
+  if (pending.INTERNAL_TRANSFER) actions.push({ severity: 'OPERATIONS', message: `${pending.INTERNAL_TRANSFER} internal transfer(s) scheduled.`, href: '/operations/transfers' });
+  if (pending.ADJUSTMENT) actions.push({ severity: 'OPERATIONS', message: `${pending.ADJUSTMENT} inventory adjustment(s) pending.`, href: '/operations/adjustments' });
 
   return {
     kpis: {

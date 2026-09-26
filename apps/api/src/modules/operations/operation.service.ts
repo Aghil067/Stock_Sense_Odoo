@@ -14,6 +14,8 @@ type CreateOperationInput = {
 };
 
 const operationInclude = {
+  reversalOf: { select: { id: true, reference: true } },
+  reversal: { select: { id: true, reference: true, reason: true, reversalNotes: true, completedAt: true, createdBy: { select: { name: true } } } },
   sourceLocation: { include: { warehouse: true } },
   destinationLocation: { include: { warehouse: true } },
   createdBy: { select: { id: true, name: true } },
@@ -28,16 +30,19 @@ function createReference(type: OperationType) {
   return `${prefixes[type]}-${date}-${randomBytes(2).toString('hex').toUpperCase()}`;
 }
 
-export async function createOperation(input: CreateOperationInput, userId: string) {
+export async function createOperation(input: CreateOperationInput, userId: string, db: Prisma.TransactionClient = prisma) {
   const locationIds = [input.sourceLocationId, input.destinationLocationId].filter(Boolean) as string[];
   const [locations, products] = await Promise.all([
-    prisma.location.count({ where: { id: { in: locationIds } } }),
-    prisma.product.count({ where: { id: { in: input.lines.map((line) => line.productId) }, isActive: true } }),
+    db.location.count({ where: { id: { in: locationIds } } }),
+    db.product.count({ where: { id: { in: input.lines.map((line) => line.productId) }, isActive: true } }),
   ]);
+  if (input.type === OperationType.INTERNAL_TRANSFER && input.sourceLocationId === input.destinationLocationId) {
+    throw new ApiError(422, 'SAME_LOCATION', 'Source and destination locations must be different.');
+  }
   if (locations !== new Set(locationIds).size) throw new ApiError(422, 'INVALID_LOCATION', 'One or more locations are invalid.');
   if (products !== input.lines.length) throw new ApiError(422, 'INVALID_PRODUCT', 'One or more products are invalid.');
 
-  return prisma.stockOperation.create({
+  return db.stockOperation.create({
     data: {
       reference: createReference(input.type),
       type: input.type,
@@ -65,7 +70,7 @@ export async function listOperations(filters: {
   const where: Prisma.StockOperationWhereInput = {
     type: filters.type,
     status: filters.status,
-    ...(filters.locationId ? { OR: [{ sourceLocationId: filters.locationId }, { destinationLocationId: filters.locationId }] } : {}),
+    ...(filters.locationId ? { AND: [{ OR: [{ sourceLocationId: filters.locationId }, { destinationLocationId: filters.locationId }] }] } : {}),
     ...(filters.search ? {
       OR: [
         { reference: { contains: filters.search, mode: 'insensitive' } },
@@ -118,9 +123,14 @@ async function decrementBalance(
     data: { quantity: { decrement: quantity } },
   });
   if (!updated.count) {
-    const balance = await tx.stockBalance.findUnique({ where: { productId_locationId: { productId, locationId } } });
+    const [balance, product] = await Promise.all([
+      tx.stockBalance.findUnique({ where: { productId_locationId: { productId, locationId } } }),
+      tx.product.findUnique({ where: { id: productId }, include: { unit: true } }),
+    ]);
     const available = balance?.quantity ?? new Prisma.Decimal(0);
-    throw new ApiError(409, 'INSUFFICIENT_STOCK', `Insufficient stock: ${available.toString()} available, ${quantity.toString()} requested.`);
+    const unitSymbol = product?.unit?.symbol ? ` ${product.unit.symbol}` : '';
+    const productName = product?.name ?? 'product';
+    throw new ApiError(409, 'INSUFFICIENT_STOCK', `Insufficient stock for ${productName}. Available: ${available.toString()}${unitSymbol}, required: ${quantity.toString()}${unitSymbol}.`);
   }
   const balance = await tx.stockBalance.findUniqueOrThrow({ where: { productId_locationId: { productId, locationId } } });
   return { before: balance.quantity.add(quantity), after: balance.quantity };
@@ -180,6 +190,7 @@ export async function validateOperation(id: string, userId: string) {
         destination = await incrementBalance(tx, line.productId, operation.destinationLocationId!, line.quantity);
       } else if (operation.type === OperationType.DELIVERY) {
         source = await decrementBalance(tx, line.productId, operation.sourceLocationId!, line.quantity);
+        ledgerQuantity = line.quantity.negated();
       } else if (operation.type === OperationType.INTERNAL_TRANSFER) {
         source = await decrementBalance(tx, line.productId, operation.sourceLocationId!, line.quantity);
         destination = await incrementBalance(tx, line.productId, operation.destinationLocationId!, line.quantity);
@@ -198,23 +209,25 @@ export async function validateOperation(id: string, userId: string) {
         ledgerQuantity = counted.sub(before);
       }
 
-      await tx.stockLedgerEntry.create({
-        data: {
-          reference: operation.reference,
-          movementType: operation.type,
-          quantity: ledgerQuantity,
-          sourceBefore: source?.before,
-          sourceAfter: source?.after,
-          destinationBefore: destination?.before,
-          destinationAfter: destination?.after,
-          reason: operation.reason,
-          operationLineId: line.id,
-          productId: line.productId,
-          sourceLocationId: operation.sourceLocationId,
-          destinationLocationId: operation.destinationLocationId,
-          createdById: userId,
-        },
-      });
+      if (!ledgerQuantity.isZero()) {
+        await tx.stockLedgerEntry.create({
+          data: {
+            reference: operation.reference,
+            movementType: operation.type,
+            quantity: ledgerQuantity,
+            sourceBefore: source?.before,
+            sourceAfter: source?.after,
+            destinationBefore: destination?.before,
+            destinationAfter: destination?.after,
+            reason: operation.reason,
+            operationLineId: line.id,
+            productId: line.productId,
+            sourceLocationId: operation.sourceLocationId,
+            destinationLocationId: operation.destinationLocationId,
+            createdById: userId,
+          },
+        });
+      }
     }
 
     return tx.stockOperation.update({
@@ -222,4 +235,28 @@ export async function validateOperation(id: string, userId: string) {
     });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
+
+export async function updateCount(id: string, lines: Array<{ lineId: string; countedQuantity: number }>) {
+  await prisma.$transaction(async tx => {
+  const operation = await tx.stockOperation.findUnique({ where: { id } });
+  if (!operation) throw new ApiError(404, 'NOT_FOUND', 'Operation not found.');
+  if (operation.type !== OperationType.ADJUSTMENT) {
+    throw new ApiError(409, 'INVALID_OPERATION_TYPE', 'Only adjustment operations can be counted.');
+  }
+  if (operation.status !== OperationStatus.DRAFT) {
+    throw new ApiError(409, 'INVALID_STATUS_TRANSITION', 'Only draft adjustments can be counted.');
+  }
+
+  await Promise.all(
+    lines.map((line) =>
+      tx.stockOperationLine.update({
+        where: { id: line.lineId, operationId: id },
+        data: { countedQuantity: new Prisma.Decimal(line.countedQuantity) },
+      })
+    )
+  );
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  return getOperation(id);
+}
+
 

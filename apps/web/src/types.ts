@@ -15,14 +15,34 @@ export type Product = {
 };
 export type OperationLine = { id: string; quantity: string; countedQuantity?: string; product: Product; ledgerEntry?: LedgerEntry };
 export type Operation = {
+  reversalOfId?: string | null; reversalOf?: { id: string; reference: string } | null; reversal?: { id: string; reference: string } | null;
   id: string; reference: string; type: OperationType; status: OperationStatus; partnerName?: string; reason?: string;
+  sourceLocationId?: string; destinationLocationId?: string;
   scheduledAt?: string; createdAt: string; completedAt?: string; sourceLocation?: Location & { warehouse: Warehouse };
   destinationLocation?: Location & { warehouse: Warehouse }; createdBy: Pick<User, 'id' | 'name'>; lines: OperationLine[];
 };
 export type LedgerEntry = {
+  reversalOfId?: string | null;
+  reversalOf?: { id: string; reference: string } | null;
+  reversal?: { id: string; reference: string; reason?: string; createdAt: string; createdBy: { name: string } } | null;
+  operationLine?: { operationId: string; operation: { reversalNotes?: string; _count: { lines: number } } };
   id: string; reference: string; movementType: OperationType; quantity: string; sourceBefore?: string; sourceAfter?: string;
   destinationBefore?: string; destinationAfter?: string; reason?: string; createdAt: string; product: Product;
   sourceLocation?: Location & { warehouse: Warehouse }; destinationLocation?: Location & { warehouse: Warehouse };
   createdBy: Pick<User, 'name'>;
 };
 
+export type StaffWorkspaceData = {
+  summary: {
+    pickingCount: number;
+    packingCount: number;
+    receivingCount: number;
+    transfersCount: number;
+    countingCount: number;
+  };
+  picking: Operation[];
+  packing: Operation[];
+  receiving: Operation[];
+  transfers: Operation[];
+  counting: Operation[];
+};

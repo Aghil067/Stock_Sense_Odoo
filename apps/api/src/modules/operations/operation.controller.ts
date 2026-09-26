@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { operationFiltersSchema } from './operation.schemas.js';
+import { operationFiltersSchema, updateCountSchema } from './operation.schemas.js';
 import * as operationService from './operation.service.js';
 
 export async function create(request: Request, response: Response) {
@@ -25,6 +25,11 @@ export async function pick(request: Request, response: Response) {
 
 export async function pack(request: Request, response: Response) {
   response.json({ data: await operationService.advanceDelivery(String(request.params.id), 'pack') });
+}
+
+export async function updateCount(request: Request, response: Response) {
+  const { lines } = updateCountSchema.parse(request.body);
+  response.json({ data: await operationService.updateCount(String(request.params.id), lines) });
 }
 
 export async function validate(request: Request, response: Response) {

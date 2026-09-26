@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "db:start": "tsx scripts/local-postgres.ts start",
     "db:stop": "tsx scripts/local-postgres.ts stop",
     "db:generate": "prisma generate",
