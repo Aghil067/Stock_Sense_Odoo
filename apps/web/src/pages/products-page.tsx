@@ -45,7 +45,7 @@ export function ProductsPage() {
         }
         setError(msg);
       } else {
-        setError('Product could not be created.');
+        setError('Product could not be created fully.');
       }
     },
   });
