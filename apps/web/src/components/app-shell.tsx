@@ -1,4 +1,4 @@
-import { Boxes, ChevronDown, ClipboardList, Gauge, LogOut, Menu, PackageSearch, Settings, SlidersHorizontal, Truck, UserRound, Warehouse, X } from 'lucide-react';
+import { Boxes, ChevronDown, ClipboardList, Gauge, LogOut, Menu, PackageSearch, RotateCw, Settings, SlidersHorizontal, Truck, UserRound, Warehouse, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth-context';
@@ -6,6 +6,7 @@ import { useAuth } from '../auth-context';
 const navigation = [
   { to: '/', label: 'Control center', icon: Gauge },
   { to: '/products', label: 'Products', icon: Boxes },
+  { to: '/replenishment', label: 'Replenishment', icon: RotateCw, managerOnly: true },
   { to: '/operations/receipts', label: 'Receipts', icon: PackageSearch },
   { to: '/operations/deliveries', label: 'Deliveries', icon: Truck },
   { to: '/operations/transfers', label: 'Internal transfers', icon: Warehouse },
@@ -28,7 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button className="sidebar-close" aria-label="Close navigation" onClick={() => setOpen(false)}><X size={18} /></button>
         </div>
         <nav aria-label="Primary navigation">
-          {navigation.map(({ to, label, icon: Icon }) => (
+          {navigation.filter((item) => !('managerOnly' in item) || user?.role === 'MANAGER').map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} end={to === '/'} onClick={() => setOpen(false)}>
               <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
             </NavLink>

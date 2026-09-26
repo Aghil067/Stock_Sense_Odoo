@@ -9,6 +9,7 @@ import { operationRouter } from './modules/operations/operation.routes.js';
 import { masterDataRouter, productRouter } from './modules/catalog/catalog.routes.js';
 import { ledgerRouter } from './modules/ledger/ledger.routes.js';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes.js';
+import { replenishmentRouter } from './modules/replenishment/replenishment.routes.js';
 
 export const app = express();
 
@@ -25,6 +26,7 @@ app.use('/api/products', productRouter);
 app.use('/api/master-data', masterDataRouter);
 app.use('/api/ledger', ledgerRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/replenishment', replenishmentRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

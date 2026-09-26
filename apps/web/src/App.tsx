@@ -9,6 +9,7 @@ import { OperationsPage } from './pages/operations-page';
 import { LedgerPage } from './pages/ledger-page';
 import { SettingsPage } from './pages/settings-page';
 import { ProfilePage } from './pages/profile-page';
+import { ReplenishmentPage } from './pages/replenishment-page';
 
 function ProtectedApp() {
   const { user, isLoading } = useAuth();
@@ -22,6 +23,7 @@ function ProtectedApp() {
     <Route path="/ledger" element={<LedgerPage />} />
     <Route path="/settings" element={<SettingsPage />} />
     <Route path="/profile" element={<ProfilePage />} />
+    <Route path="/replenishment" element={user.role === 'MANAGER' ? <ReplenishmentPage /> : <Navigate to="/" replace />} />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes></AppShell>;
 }
