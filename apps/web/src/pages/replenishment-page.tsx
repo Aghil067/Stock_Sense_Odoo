@@ -143,7 +143,7 @@ export function ReplenishmentPage() {
     if (!receiptTarget) return;
     const supplier = String(new FormData(event.currentTarget).get('supplier') || '').trim();
     if (supplier.length < 2) {
-      setError('Enter a supplier name of at least two characters.');
+      setError('Enter a supplier name of at least two characters..');
       return;
     }
     createReceipt.mutate({ supplier, item: receiptTarget });
