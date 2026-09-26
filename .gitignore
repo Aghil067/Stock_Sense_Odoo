@@ -7,4 +7,6 @@ dist/
 .DS_Store
 coverage/
 *.tsbuildinfo
+.local/
+tmp/
 apps/api/prisma/dev.db*
