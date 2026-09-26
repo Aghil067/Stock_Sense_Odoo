@@ -10,7 +10,7 @@ export type Location = { id: string; name: string; code: string; warehouseId: st
 export type Balance = { id: string; quantity: string; locationId: string; location: Location & { warehouse: Warehouse } };
 export type Product = {
   id: string; name: string; sku: string; description?: string; isActive: boolean; category: Category; unit: Unit;
-  balances: Balance[]; reorderRules: Array<{ id: string; locationId: string; minimumQty: string }>;
+  balances: Balance[]; reorderRules: Array<{ id: string; locationId: string; minimumQty: string; location: Location & { warehouse: Warehouse } }>;
   totalStock: string; stockStatus: 'HEALTHY' | 'LOW_STOCK' | 'OUT_OF_STOCK'; ledgerEntries?: LedgerEntry[];
 };
 export type OperationLine = { id: string; quantity: string; countedQuantity?: string; product: Product; ledgerEntry?: LedgerEntry };

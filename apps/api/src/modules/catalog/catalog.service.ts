@@ -7,7 +7,7 @@ const productInclude = {
   category: true,
   unit: true,
   balances: { include: { location: { include: { warehouse: true } } } },
-  reorderRules: true,
+  reorderRules: { include: { location: { include: { warehouse: true } } } },
 } satisfies Prisma.ProductInclude;
 
 function serializeProduct<T extends Prisma.ProductGetPayload<{ include: typeof productInclude }>>(product: T) {
