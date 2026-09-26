@@ -8,6 +8,7 @@ import { ProductDetailPage } from './pages/product-detail-page';
 import { OperationsPage } from './pages/operations-page';
 import { LedgerPage } from './pages/ledger-page';
 import { SettingsPage } from './pages/settings-page';
+import { ProfilePage } from './pages/profile-page';
 
 function ProtectedApp() {
   const { user, isLoading } = useAuth();
@@ -20,6 +21,7 @@ function ProtectedApp() {
     <Route path="/operations/:kind" element={<OperationsPage />} />
     <Route path="/ledger" element={<LedgerPage />} />
     <Route path="/settings" element={<SettingsPage />} />
+    <Route path="/profile" element={<ProfilePage />} />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes></AppShell>;
 }

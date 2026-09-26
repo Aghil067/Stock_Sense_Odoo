@@ -1,4 +1,4 @@
-import { Boxes, ClipboardList, Gauge, LogOut, Menu, PackageSearch, Settings, SlidersHorizontal, Truck, Warehouse, X } from 'lucide-react';
+import { Boxes, ChevronDown, ClipboardList, Gauge, LogOut, Menu, PackageSearch, Settings, SlidersHorizontal, Truck, UserRound, Warehouse, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth-context';
@@ -11,12 +11,13 @@ const navigation = [
   { to: '/operations/transfers', label: 'Internal transfers', icon: Warehouse },
   { to: '/operations/adjustments', label: 'Adjustments', icon: Settings },
   { to: '/ledger', label: 'Stock ledger', icon: ClipboardList },
-  { to: '/settings', label: 'Warehouses & profile', icon: SlidersHorizontal },
+  { to: '/settings', label: 'Inventory setup', icon: SlidersHorizontal },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   return (
     <div className="app-frame">
       <button className="mobile-menu" aria-label="Open navigation" onClick={() => setOpen(true)}><Menu size={20} /></button>
@@ -35,9 +36,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="sidebar-profile">
           <div className="avatar">{user?.name.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div>
-          <div className="profile-copy"><strong>{user?.name}</strong><small>{user?.role.toLowerCase()}</small></div>
-          <button className="icon-button dark" aria-label="Log out" onClick={() => void logout()}><LogOut size={17} /></button>
+          <button className="profile-trigger" aria-expanded={profileOpen} onClick={() => setProfileOpen((value) => !value)}><span className="profile-copy"><strong>{user?.name}</strong><small>{user?.role === 'MANAGER' ? 'Inventory Manager' : 'Warehouse Staff'}</small></span><ChevronDown size={15} /></button>
         </div>
+        {profileOpen && <div className="profile-menu"><NavLink to="/profile" onClick={() => { setProfileOpen(false); setOpen(false); }}><UserRound size={16} /> My Profile</NavLink><button onClick={() => void logout()}><LogOut size={16} /> Logout</button></div>}
       </aside>
       {open && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setOpen(false)} />}
       <main className="main-content">{children}</main>
